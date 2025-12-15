@@ -1,0 +1,74 @@
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+import urllib.parse
+import requests
+
+TOKEN = "8015046189:AAHCrM2Lagedg4fCA0T7rAdMIAr53nTTyG4"
+
+LANGS = {
+    "Русский": "ru",
+    "English": "en",
+    "Deutsch": "de",
+    "Français": "fr",
+    "Español": "es"
+}
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    keyboard = [[InlineKeyboardButton(k, callback_data=f"from_{v}")] for k, v in LANGS.items()]
+    await update.message.reply_text("С какого языка переводим?", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def from_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    context.user_data["from"] = q.data[5:]
+    keyboard = [[InlineKeyboardButton(k, callback_data=f"to_{v}")] for k, v in LANGS.items()]
+    await q.edit_message_text("На какой язык?", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def to_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    context.user_data["to"] = q.data[3:]
+    await q.edit_message_text("Отправь текст для перевода")
+
+async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    sl = context.user_data["from"]
+    tl = context.user_data["to"]
+
+    url = "https://translate.googleapis.com/translate_a/single"
+
+    params = {
+        "client": "gtx",
+        "sl": sl,
+        "tl": tl,
+        "dt": "t",
+        "q": text
+    }
+
+    try:
+        r = requests.get(url, params=params, timeout=20)
+        data = r.json()
+        result = "".join([item[0] for item in data[0]])
+        await update.message.reply_text(result)
+    except Exception as e:
+        print(e)
+        await update.message.reply_text("Ошибка перевода")
+
+async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    await update.message.reply_text(
+        "Перевод остановлен 🛑\n"
+        "Чтобы начать снова — отправь /start"
+    )
+
+app = ApplicationBuilder().token(TOKEN).build()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CallbackQueryHandler(from_lang, pattern="^from_"))
+app.add_handler(CallbackQueryHandler(to_lang, pattern="^to_"))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, translate))
+app.add_handler(CommandHandler("stop", stop))
+
+
+print("Бот запущен")
+app.run_polling()
